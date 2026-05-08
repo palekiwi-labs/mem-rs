@@ -50,6 +50,9 @@ pub enum Commands {
         /// List files for all branches
         #[arg(short = 'a', long)]
         all: bool,
+        /// Filter by artifact type
+        #[arg(short = 't', long = "type", value_enum)]
+        mem_type: Option<MemType>,
         /// Include gitignored categories (tmp, ref)
         #[arg(short = 'i', long)]
         include_gitignored: bool,

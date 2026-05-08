@@ -47,10 +47,11 @@ fn main() -> anyhow::Result<()> {
         Commands::List {
             branch,
             all,
+            mem_type,
             include_gitignored,
             json,
         } => {
-            commands::list::handle(&cwd, branch, all, include_gitignored, json)?;
+            commands::list::handle(&cwd, branch, all, mem_type, include_gitignored, json)?;
         }
         Commands::Log { command } => {
             commands::log::handle(&cwd, command)?;

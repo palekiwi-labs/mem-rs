@@ -1,3 +1,4 @@
+use crate::cli::MemType;
 use crate::config::Config;
 use crate::git;
 use anyhow::{Context, Result};
@@ -20,6 +21,7 @@ pub fn handle(
     cwd: &Path,
     branch_name: Option<String>,
     all: bool,
+    mem_type: Option<MemType>,
     include_gitignored: bool,
     json: bool,
 ) -> Result<()> {
@@ -50,7 +52,7 @@ pub fn handle(
     // 7. Filter
     let valid_paths = paths
         .into_iter()
-        .filter(|path| is_valid_mem_file(path, &mem_path, include_gitignored));
+        .filter(|path| is_valid_mem_file(path, &mem_path, mem_type, include_gitignored));
 
     // 8. Process files and Output
     if !json {
@@ -93,7 +95,12 @@ fn resolve_scan_paths(
     }
 }
 
-fn is_valid_mem_file(path: &Path, mem_path: &Path, include_gitignored: bool) -> bool {
+fn is_valid_mem_file(
+    path: &Path,
+    mem_path: &Path,
+    mem_type: Option<MemType>,
+    include_gitignored: bool,
+) -> bool {
     let Ok(rel_to_mem) = path.strip_prefix(mem_path) else {
         return false;
     };
@@ -107,8 +114,21 @@ fn is_valid_mem_file(path: &Path, mem_path: &Path, include_gitignored: bool) -> 
         return false; // Ensures len >= 3
     };
 
-    if !include_gitignored {
-        let category = category_comp.as_os_str().to_string_lossy();
+    let category = category_comp.as_os_str().to_string_lossy();
+
+    if let Some(requested_type) = mem_type {
+        let requested_cat = match requested_type {
+            MemType::Spec => "spec",
+            MemType::Trace => "trace",
+            MemType::Tmp => "tmp",
+            MemType::Ref => "ref",
+            MemType::Bin => "bin",
+            MemType::Doc => "doc",
+        };
+        if category != requested_cat {
+            return false;
+        }
+    } else if !include_gitignored {
         if category == "tmp" || category == "ref" {
             return false;
         }

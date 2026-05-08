@@ -642,3 +642,90 @@ fn test_list_not_initialized() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_list_type_filter() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    helpers::setup_git_repo(temp.path());
+
+    // 1. Initialize
+    let mut cmd = Command::cargo_bin("mem")?;
+    cmd.current_dir(temp.path())
+        .env("MEM_BRANCH_NAME", "test-mem")
+        .env("MEM_DIR_NAME", ".test-mem")
+        .arg("init");
+    cmd.assert().success();
+
+    // 2. Add different types of files
+    let mut cmd = Command::cargo_bin("mem")?;
+    cmd.current_dir(temp.path())
+        .env("MEM_BRANCH_NAME", "test-mem")
+        .env("MEM_DIR_NAME", ".test-mem")
+        .arg("add")
+        .arg("spec.md")
+        .arg("content");
+    cmd.assert().success();
+
+    let mut cmd = Command::cargo_bin("mem")?;
+    cmd.current_dir(temp.path())
+        .env("MEM_BRANCH_NAME", "test-mem")
+        .env("MEM_DIR_NAME", ".test-mem")
+        .arg("add")
+        .arg("-t")
+        .arg("doc")
+        .arg("doc.md")
+        .arg("content");
+    cmd.assert().success();
+
+    let mut cmd = Command::cargo_bin("mem")?;
+    cmd.current_dir(temp.path())
+        .env("MEM_BRANCH_NAME", "test-mem")
+        .env("MEM_DIR_NAME", ".test-mem")
+        .arg("add")
+        .arg("-t")
+        .arg("tmp")
+        .arg("tmp.log")
+        .arg("content");
+    cmd.assert().success();
+
+    // 3. List with --type spec
+    let mut cmd = Command::cargo_bin("mem")?;
+    cmd.current_dir(temp.path())
+        .env("MEM_BRANCH_NAME", "test-mem")
+        .env("MEM_DIR_NAME", ".test-mem")
+        .arg("list")
+        .arg("-t")
+        .arg("spec");
+    let output = String::from_utf8(cmd.assert().success().get_output().stdout.clone())?;
+    assert!(output.contains("spec.md"));
+    assert!(!output.contains("doc.md"));
+    assert!(!output.contains("tmp.log"));
+
+    // 4. List with --type doc
+    let mut cmd = Command::cargo_bin("mem")?;
+    cmd.current_dir(temp.path())
+        .env("MEM_BRANCH_NAME", "test-mem")
+        .env("MEM_DIR_NAME", ".test-mem")
+        .arg("list")
+        .arg("-t")
+        .arg("doc");
+    let output = String::from_utf8(cmd.assert().success().get_output().stdout.clone())?;
+    assert!(!output.contains("spec.md"));
+    assert!(output.contains("doc.md"));
+    assert!(!output.contains("tmp.log"));
+
+    // 5. List with --type tmp (should work even if ignored by default)
+    let mut cmd = Command::cargo_bin("mem")?;
+    cmd.current_dir(temp.path())
+        .env("MEM_BRANCH_NAME", "test-mem")
+        .env("MEM_DIR_NAME", ".test-mem")
+        .arg("list")
+        .arg("-t")
+        .arg("tmp");
+    let output = String::from_utf8(cmd.assert().success().get_output().stdout.clone())?;
+    assert!(!output.contains("spec.md"));
+    assert!(!output.contains("doc.md"));
+    assert!(output.contains("tmp.log"));
+
+    Ok(())
+}
