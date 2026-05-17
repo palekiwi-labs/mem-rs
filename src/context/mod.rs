@@ -142,7 +142,9 @@ pub fn resolve_profile(
             match glob(&pattern) {
                 Ok(entries) => {
                     for p in entries.flatten() {
-                        accumulator.push(p);
+                        if p.is_file() {
+                            accumulator.push(p);
+                        }
                     }
                 }
                 Err(e) => {
@@ -194,6 +196,14 @@ pub fn gather_context(cwd: &Path, profile_name: Option<&str>) -> anyhow::Result<
 
         if !canonical_path.starts_with(&canonical_git_root) {
             eprintln!("Warning: Path traversal blocked: {}", path.display());
+            continue;
+        }
+
+        if !canonical_path.is_file() {
+            eprintln!(
+                "Warning: Artifact is not a file (skipping): {}",
+                path.display()
+            );
             continue;
         }
 
@@ -506,5 +516,36 @@ mod tests {
             .collect();
         paths.sort();
         assert_eq!(paths, vec!["1.md", "2.md"]);
+    }
+
+    #[test]
+    fn test_resolve_profile_skips_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+
+        let branch_a = root.join(".mem").join("A");
+        let spec_a = branch_a.join("spec");
+        let sub_dir = spec_a.join("notes");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+
+        std::fs::write(spec_a.join("1.md"), "1").unwrap();
+        std::fs::write(sub_dir.join("2.md"), "2").unwrap();
+        std::fs::write(
+            branch_a.join("context.json"),
+            r#"{"default": {"artifacts": ["./spec/**/*"]}}"#,
+        )
+        .unwrap();
+
+        let mut visited = HashSet::new();
+        let res = resolve_profile("A", "default", root, &mut visited).unwrap();
+
+        // Should include 1.md and 2.md, but NOT the 'notes' directory
+        assert_eq!(res.len(), 2);
+        let mut file_names: Vec<_> = res
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap())
+            .collect();
+        file_names.sort();
+        assert_eq!(file_names, vec!["1.md", "2.md"]);
     }
 }
