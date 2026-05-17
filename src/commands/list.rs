@@ -128,11 +128,10 @@ fn is_valid_mem_file(
         if category != requested_cat {
             return false;
         }
-    } else if !include_gitignored {
-        if category == "tmp" || category == "ref" {
+    } else if !include_gitignored
+        && (category == "tmp" || category == "ref") {
             return false;
         }
-    }
 
     true
 }
