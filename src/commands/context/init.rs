@@ -1,11 +1,11 @@
 use crate::commands::context::{context_json_path, ContextProfile};
-use crate::git::{get_current_branch, get_git_root};
+use crate::git::{get_current_branch, get_git_root, sanitize_branch_name};
 use std::collections::HashMap;
 use std::path::Path;
 
 pub fn handle(cwd: &Path, force: bool) -> anyhow::Result<()> {
     let branch = get_current_branch(cwd)?;
-    let sanitized_branch = branch.replace("/", "-").replace("\\", "-");
+    let sanitized_branch = sanitize_branch_name(&branch);
     let config_path = context_json_path(cwd, &sanitized_branch);
 
     if config_path.exists() && !force {

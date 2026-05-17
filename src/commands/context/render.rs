@@ -1,13 +1,13 @@
 use crate::commands::context::{context_json_path, load_context_config, resolve_profile};
 use crate::config::Config;
-use crate::git::{get_current_branch, get_git_root, run_git};
+use crate::git::{get_current_branch, get_git_root, run_git, sanitize_branch_name};
 use std::collections::HashSet;
 use std::path::Path;
 
 pub fn handle(cwd: &Path, profile: Option<String>) -> anyhow::Result<()> {
     let profile_name = profile.unwrap_or_else(|| "default".to_string());
     let branch = get_current_branch(cwd)?;
-    let sanitized_branch = branch.replace("/", "-").replace("\\", "-");
+    let sanitized_branch = sanitize_branch_name(&branch);
     let git_root = get_git_root(cwd)?;
     let config = Config::load(&git_root)?;
 
@@ -16,18 +16,21 @@ pub fn handle(cwd: &Path, profile: Option<String>) -> anyhow::Result<()> {
 
     // 1. & 2. Output artifacts
     for path in paths {
-        if !path.exists() {
-            eprintln!("Warning: Artifact not found: {}", path.display());
+        if !path.is_file() {
+            eprintln!(
+                "Warning: Artifact not found or is not a file: {}",
+                path.display()
+            );
             continue;
         }
 
         let content = std::fs::read_to_string(&path)?;
         let relative_path = path.strip_prefix(&git_root).unwrap_or(&path);
+        let normalized_path = relative_path.display().to_string().replace('\\', "/");
 
         println!(
             "<artifact path=\"{}\">\n{}\n</artifact>\n",
-            relative_path.display(),
-            content
+            normalized_path, content
         );
     }
 
@@ -45,12 +48,14 @@ pub fn handle(cwd: &Path, profile: Option<String>) -> anyhow::Result<()> {
     if let Some(diff_args) = &profile_obj.diff {
         let mut args = vec!["diff"];
         let split_args: Vec<&str> = diff_args.split_whitespace().collect();
-        args.extend(split_args);
+        args.extend(split_args.iter().cloned());
 
         // Apply diff_exclude_paths
         let mut exclude_args = Vec::new();
         if !config.diff_exclude_paths.is_empty() {
-            args.push("--");
+            if !split_args.contains(&"--") {
+                args.push("--");
+            }
             for pattern in &config.diff_exclude_paths {
                 exclude_args.push(format!(":(exclude){}", pattern));
             }
