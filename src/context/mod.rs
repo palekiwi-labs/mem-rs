@@ -121,12 +121,13 @@ pub fn resolve_profile(
                 Some((b, p)) => (b.to_string(), p.to_string()),
                 None => (rest.to_string(), "default".to_string()),
             }
+        } else if let Some(p) = inc.strip_prefix(':') {
+            (branch_dir.to_string(), p.to_string())
         } else {
-            visited.remove(&key);
-            anyhow::bail!(
-                "Invalid include format: {}. Expected @branch or @branch:profile",
-                inc
-            );
+            match inc.split_once(':') {
+                Some((b, p)) => (b.to_string(), p.to_string()),
+                None => (inc.to_string(), "default".to_string()),
+            }
         };
 
         let inc_paths = resolve_profile(&inc_branch, &inc_profile, git_root, visited)?;
@@ -383,6 +384,49 @@ mod tests {
 
         // Valid path containing ".." as part of filename
         assert!(parse_artifact_path("./spec/my..file.md", current, root).is_ok());
+    }
+
+    #[test]
+    fn test_resolve_profile_include_formats() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+
+        let branch_a = root.join(".mem").join("A");
+        let branch_b = root.join(".mem").join("B");
+        std::fs::create_dir_all(&branch_a).unwrap();
+        std::fs::create_dir_all(&branch_b).unwrap();
+
+        std::fs::write(
+            branch_a.join("context.json"),
+            r#"{
+                "default": { "include": ["B", "B:brief", ":local", "@B"] },
+                "local": { "artifacts": ["./local.md"] }
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            branch_b.join("context.json"),
+            r#"{
+                "default": { "artifacts": ["./b-default.md"] },
+                "brief": { "artifacts": ["./b-brief.md"] }
+            }"#,
+        )
+        .unwrap();
+
+        // Create dummy files
+        std::fs::write(branch_a.join("local.md"), "local").unwrap();
+        std::fs::write(branch_b.join("b-default.md"), "b-default").unwrap();
+        std::fs::write(branch_b.join("b-brief.md"), "b-brief").unwrap();
+
+        let mut visited = HashSet::new();
+        let res = resolve_profile("A", "default", root, &mut visited).unwrap();
+
+        // Accumulator: [b-default, b-brief, local, b-default (deduped)]
+        // Final: [b-default, b-brief, local]
+        assert_eq!(res.len(), 3);
+        assert!(res[0].to_str().unwrap().contains("b-default.md"));
+        assert!(res[1].to_str().unwrap().contains("b-brief.md"));
+        assert!(res[2].to_str().unwrap().contains("local.md"));
     }
 
     #[test]
