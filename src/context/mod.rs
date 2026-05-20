@@ -42,12 +42,7 @@ pub fn parse_artifact_path(
             None => (stripped, ""),
         };
 
-        if b.contains('/') || b.contains('\\') {
-            anyhow::bail!(
-                "Branch component in cross-branch reference must be a sanitized name (no slashes)"
-            );
-        }
-        (b.to_string(), p.to_string())
+        (sanitize_branch_name(b), p.to_string())
     } else {
         // Local artifact. Defaults to current branch.
         // We optionally strip a leading "./" for cleaner aesthetics.
@@ -118,13 +113,13 @@ pub fn resolve_profile(
     for inc in &profile.include {
         let (inc_branch, inc_profile) = if let Some(rest) = inc.strip_prefix('@') {
             match rest.split_once(':') {
-                Some((b, p)) => (b.to_string(), p.to_string()),
-                None => (rest.to_string(), "default".to_string()),
+                Some((b, p)) => (sanitize_branch_name(b), p.to_string()),
+                None => (sanitize_branch_name(rest), "default".to_string()),
             }
         } else {
             match inc.split_once(':') {
-                Some((b, p)) => (b.to_string(), p.to_string()),
-                None => (inc.to_string(), "default".to_string()),
+                Some((b, p)) => (sanitize_branch_name(b), p.to_string()),
+                None => (sanitize_branch_name(inc), "default".to_string()),
             }
         };
 
@@ -377,8 +372,14 @@ mod tests {
 
         // Failures
         assert!(parse_artifact_path("/absolute.md", current, root).is_err());
-        assert!(parse_artifact_path("@branch_with/slash:spec.md", current, root).is_err());
         assert!(parse_artifact_path("@other:/etc/passwd", current, root).is_err());
+
+        // Cross-branch reference with slash (now supported via sanitization)
+        let path = parse_artifact_path("@branch/with/slash:spec.md", current, root).unwrap();
+        assert_eq!(
+            path,
+            root.join(".mem").join("branch-with-slash").join("spec.md")
+        );
 
         // Valid path containing ".." as part of filename
         assert!(parse_artifact_path("./spec/my..file.md", current, root).is_ok());
@@ -391,13 +392,15 @@ mod tests {
 
         let branch_a = root.join(".mem").join("A");
         let branch_b = root.join(".mem").join("B");
+        let branch_feat = root.join(".mem").join("feat-test");
         std::fs::create_dir_all(&branch_a).unwrap();
         std::fs::create_dir_all(&branch_b).unwrap();
+        std::fs::create_dir_all(&branch_feat).unwrap();
 
         std::fs::write(
             branch_a.join("context.json"),
             r#"{
-                "default": { "include": ["B", "B:brief", "@B"] }
+                "default": { "include": ["B", "B:brief", "@B", "feat/test"] }
             }"#,
         )
         .unwrap();
@@ -409,19 +412,28 @@ mod tests {
             }"#,
         )
         .unwrap();
+        std::fs::write(
+            branch_feat.join("context.json"),
+            r#"{
+                "default": { "artifacts": ["./feat.md"] }
+            }"#,
+        )
+        .unwrap();
 
         // Create dummy files
         std::fs::write(branch_b.join("b-default.md"), "b-default").unwrap();
         std::fs::write(branch_b.join("b-brief.md"), "b-brief").unwrap();
+        std::fs::write(branch_feat.join("feat.md"), "feat").unwrap();
 
         let mut visited = HashSet::new();
         let res = resolve_profile("A", "default", root, &mut visited).unwrap();
 
-        // Accumulator: [b-default, b-brief, b-default (deduped)]
-        // Final: [b-default, b-brief]
-        assert_eq!(res.len(), 2);
+        // Accumulator: [b-default, b-brief, b-default (deduped), feat]
+        // Final: [b-default, b-brief, feat]
+        assert_eq!(res.len(), 3);
         assert!(res[0].to_str().unwrap().contains("b-default.md"));
         assert!(res[1].to_str().unwrap().contains("b-brief.md"));
+        assert!(res[2].to_str().unwrap().contains("feat.md"));
     }
 
     #[test]
